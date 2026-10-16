@@ -45,22 +45,54 @@ public class PolizaService {
         return riesgoRepository.findByPolizaId(polizaId).stream().map(RiesgoResponse::from).toList();
     }
 
+    
     @Transactional
     public PolizaResponse crear(CrearPolizaRequest request) {
         if (request.fechaFin().isBefore(request.fechaInicio())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "fechaFin debe ser igual o posterior a fechaInicio");
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "fechaFin debe ser igual o posterior a fechaInicio"
+            );
         }
-        long meses = ChronoUnit.MONTHS.between(request.fechaInicio().withDayOfMonth(1),
-                request.fechaFin().withDayOfMonth(1)) + 1;
-        if (meses <= 0) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Rango de vigencia inválido");
 
-        Poliza poliza = new Poliza(request.tipo(), request.canonMensual(), request.mesesVigencia(),
-                request.fechaInicio(), request.fechaFin());
-        // Una póliza individual tiene un único riesgo; el riesgo inicial se crea explícitamente por endpoint.
+        if (request.tipo() == TipoPoliza.INDIVIDUAL) {
+            if (request.riesgoInicialDescripcion() == null
+                    || request.riesgoInicialDescripcion().isBlank()
+                    || request.riesgoInicialIdentificadorInmueble() == null
+                    || request.riesgoInicialIdentificadorInmueble().isBlank()) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Las pólizas individuales requieren un riesgo inicial"
+                );
+            }
+        }
+
+        Poliza poliza = new Poliza(
+                request.tipo(),
+                request.canonMensual(),
+                request.mesesVigencia(),
+                request.fechaInicio(),
+                request.fechaFin()
+        );
+
+        if (request.tipo() == TipoPoliza.INDIVIDUAL) {
+            Riesgo riesgo = new Riesgo(
+                    request.riesgoInicialDescripcion(),
+                    request.riesgoInicialIdentificadorInmueble()
+            );
+            poliza.agregarRiesgo(riesgo);
+        }
+
         Poliza guardada = polizaRepository.save(poliza);
-        coreIntegrationService.registrarIntento("CREACION", guardada.getId());
+
+        coreIntegrationService.registrarIntento(
+                "CREACION",
+                guardada.getId()
+        );
+
         return PolizaResponse.from(guardada);
     }
+
 
     @Transactional
     public PolizaResponse renovar(Long id) {
